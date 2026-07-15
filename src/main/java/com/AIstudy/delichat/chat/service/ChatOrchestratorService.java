@@ -23,7 +23,6 @@ public class ChatOrchestratorService {
 
     public Flux<String> handle(Long sessionId, String userQuestion){
 
-
         List<ChatMessageResult> history = chatMessageRepository.findRecentMessage(sessionId);
 
         chatMessageRepository.save(sessionId,"user",userQuestion);

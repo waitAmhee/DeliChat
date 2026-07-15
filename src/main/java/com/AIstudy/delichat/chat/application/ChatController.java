@@ -14,6 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.awt.*;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @RestController
@@ -22,6 +23,7 @@ public class ChatController {
 
     private final ChatOrchestratorService chatOrchestratorService;
     private final ChatSessionService chatSessionService;
+    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     @PostMapping("/chat/session")
     public ResponseEntity<Map<String,Long>> createSession(){
@@ -33,8 +35,8 @@ public class ChatController {
     public SseEmitter streamAnswer(@RequestParam Long sessionId,@RequestParam String question){
         SseEmitter emitter = new SseEmitter(60_000L);
 
-        //TODO 실제 스레드 풀로 재사용하기
-        Executors.newSingleThreadExecutor().submit(()->{
+        //DOC 버츄얼 스레드로 변경 이유 정리
+        virtualThreadExecutor.submit(()->{
             chatOrchestratorService.handle(sessionId,question)
                     .subscribe(
                             token->{
