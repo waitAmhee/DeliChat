@@ -11,6 +11,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 @Service
 @RequiredArgsConstructor
@@ -20,7 +24,8 @@ public class RagEvalJudgeService {
 
     private final ChatModel chatModel;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
+    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     private static final String JUDGE_PROMPT = """
         너는 배달 서비스 CS 챗봇의 답변 품질을 엄격하게 평가하는 심사자다.
@@ -54,22 +59,45 @@ public class RagEvalJudgeService {
                     """
         );
 
-        for(Map<String,Object> row:unjudgedLogs){
-            Long evalLogId = ((Number) row.get("id")).longValue();
-            String question = (String) row.get("question");
-            String context = (String) row.get("context");
-            String answer = (String) row.get("answer");
+        List<Future<Boolean>> futures = unjudgedLogs.stream()
+                .map(row -> virtualThreadExecutor.submit(() -> judgeAndSave(row)))
+                .toList();
 
-            MultiCriteriaJudgement judgement = judge(question, context, answer);
-            save(evalLogId,judgement);
-
-            if("hallucination".equals(judgement.failureType())){
-                //TODO 여기서 알림 전송이나 다른 방식으로 처리.
-                System.out.println("[HALLUCINATION 발견] eval_log_id=" + evalLogId + ", reason=" + judgement.reason());
+        int judgedCount = 0;
+        for (Future<Boolean> future : futures) {
+            try {
+                if (Boolean.TRUE.equals(future.get())) {
+                    judgedCount++;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException e) {
+                System.out.println("[JUDGE 실패] " + e.getCause());
             }
         }
 
-        return unjudgedLogs.size();
+        return judgedCount;
+    }
+
+    private boolean judgeAndSave(Map<String, Object> row){
+        Long evalLogId = ((Number) row.get("id")).longValue();
+        String question = (String) row.get("question");
+        String context = (String) row.get("context");
+        String answer = (String) row.get("answer");
+
+        try {
+            MultiCriteriaJudgement judgement = judge(question, context, answer);
+            save(evalLogId, judgement);
+
+            if ("hallucination".equals(judgement.failureType())) {
+                //TODO 여기서 알림 전송이나 다른 방식으로 처리.
+                System.out.println("[HALLUCINATION 발견] eval_log_id=" + evalLogId + ", reason=" + judgement.reason());
+            }
+            return true;
+        } catch (Exception e) {
+            System.out.println("[JUDGE 실패] eval_log_id=" + evalLogId + ", reason=" + e.getMessage());
+            return false;
+        }
     }
 
     private MultiCriteriaJudgement judge(String question, String context, String answer){
@@ -92,7 +120,7 @@ public class RagEvalJudgeService {
         jdbcTemplate.update("""
                         INSERT INTO rag_eval_judgement
                         (eval_log_id, faithfulness_score, relevancy_score, tone_score, failure_type, reason)
-                        VALUES (?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?)
         """,evalLogId,j.faithfulness(),j.relevancy(),j.tone(),j.failureType(),j.reason());
     }
 }
