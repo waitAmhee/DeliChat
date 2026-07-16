@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.awt.*;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -26,8 +25,8 @@ public class ChatController {
     private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     @PostMapping("/chat/session")
-    public ResponseEntity<Map<String,Long>> createSession(){
-        Long sessionId = chatSessionService.createSession();
+    public ResponseEntity<Map<String,Long>> createSession(@RequestParam(required = false) Long memberId){
+        Long sessionId = chatSessionService.createSession(memberId);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("sessionId", sessionId));
     }
 

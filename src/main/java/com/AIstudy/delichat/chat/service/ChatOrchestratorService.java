@@ -2,6 +2,7 @@ package com.AIstudy.delichat.chat.service;
 
 import com.AIstudy.delichat.chat.dto.ChatMessageResult;
 import com.AIstudy.delichat.chat.repository.ChatMessageRepository;
+import com.AIstudy.delichat.chat.repository.ChatSessionRepository;
 import com.AIstudy.delichat.chat.repository.RagEvalLogRepository;
 import com.AIstudy.delichat.rag.dto.FaqContextResult;
 import com.AIstudy.delichat.rag.service.FaqSearchService;
@@ -17,8 +18,10 @@ import java.util.List;
 public class ChatOrchestratorService {
 
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatSessionRepository chatSessionRepository;
     private final QueryRewriteService queryRewriteService;
     private final FaqSearchService faqSearchService;
+    private final ChatAnswerService chatAnswerService;
     private final RagEvalLogRepository ragEvalLogRepository;
 
     public Flux<String> handle(Long sessionId, String userQuestion){
@@ -30,9 +33,10 @@ public class ChatOrchestratorService {
         String rewrittenQuestion = queryRewriteService.rewrite(history,userQuestion);
 
         FaqContextResult faqContext = faqSearchService.buildContextFor(rewrittenQuestion);
+        Long memberId = chatSessionRepository.findMemberId(sessionId);
 
         StringBuilder fullAnswer = new StringBuilder();
-        return faqSearchService.answerStreamWithContext(rewrittenQuestion,faqContext.context())
+        return chatAnswerService.answerStream(rewrittenQuestion,faqContext.context(),memberId)
                 .doOnNext(fullAnswer::append)
                 .doOnComplete(()->{
                     String answer = fullAnswer.toString();
