@@ -1,0 +1,92 @@
+name: Auto Create PR
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  auto-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for existing PR
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${GITHUB_REF#refs/heads/}"
+          existing=$(gh pr list --head "$BRANCH" --base main --json number --jq length)
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "exists=$existing" >> "$GITHUB_OUTPUT"
+
+      - name: Generate PR content with LLM
+        if: steps.check.outputs.exists == '0'
+        id: gen
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          BRANCH: ${{ steps.check.outputs.branch }}
+        run: |
+          DIFF=$(git diff "origin/main...HEAD" -- . ':(exclude)*.lock' ':(exclude)gradle/wrapper/*' | head -c 12000)
+          COMMITS=$(git log "origin/main..HEAD" --pretty=format:'- %s')
+          TEMPLATE=$(cat .github/PULL_REQUEST_TEMPLATE.md)
+
+          SYSTEM_PROMPT='너는 이 저장소(DeliChat, Spring Boot RAG 챗봇)의 PR 설명을 작성하는 어시스턴트다.
+          주어진 커밋 목록과 diff를 분석해서 PR 템플릿의 각 섹션을 한국어로 채워라.
+          "변경 사항" 섹션은 레이어 나열("DTO/Repository/Service 추가")이 아니라 기능 단위로, 가능하면 정량적 근거(예: "N회 -> M회")를 포함해서 작성한다.
+          diff에서 확인할 수 없는 내용은 추측하지 말고 "관련 이슈 / 브랜치"와 "스크린샷 / 테스트 결과" 섹션은 비워둔다.
+          출력은 반드시 아래 형식을 그대로 따른다 (다른 설명 텍스트 금지):
+          TITLE: <70자 이내의 한 줄 제목>
+          ---
+          <템플릿 형식을 그대로 채운 PR 본문>'
+
+          PAYLOAD=$(jq -n \
+            --arg model "gpt-4.1-nano" \
+            --arg sys "$SYSTEM_PROMPT" \
+            --arg user "브랜치: $BRANCH
+
+          커밋 목록:
+          $COMMITS
+
+          diff:
+          $DIFF
+
+          템플릿:
+          $TEMPLATE" \
+            '{model: $model, messages: [{role: "system", content: $sys}, {role: "user", content: $user}], temperature: 0.3}')
+
+          RESPONSE=$(curl -sS https://api.openai.com/v1/chat/completions \
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD")
+
+          CONTENT=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty')
+
+          if [ -z "$CONTENT" ]; then
+            echo "LLM 응답 생성 실패, 빈 템플릿으로 대체합니다." >&2
+            echo "title=$BRANCH" >> "$GITHUB_OUTPUT"
+            cp .github/PULL_REQUEST_TEMPLATE.md pr_body.md
+          else
+            TITLE=$(echo "$CONTENT" | sed -n 's/^TITLE: //p' | head -n1)
+            echo "title=${TITLE:-$BRANCH}" >> "$GITHUB_OUTPUT"
+            echo "$CONTENT" | sed '1,/^---$/d' > pr_body.md
+          fi
+
+      - name: Create PR
+        if: steps.check.outputs.exists == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "${{ steps.check.outputs.branch }}" \
+            --title "${{ steps.gen.outputs.title }}" \
+            --body-file pr_body.md
