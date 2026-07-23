@@ -1,24 +1,30 @@
 package com.AIstudy.delichat.chat.service;
 
+import com.AIstudy.delichat.chat.dto.ChatMessageResult;
 import com.AIstudy.delichat.order.service.OrderQueryTools;
+import com.AIstudy.delichat.rag.dto.FaqSearchOutcome;
+import com.AIstudy.delichat.rag.service.FaqSearchTools;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 @RequiredArgsConstructor
 public class ChatAnswerService {
 
-    private static final String NO_CONTEXT_PLACEHOLDER = "(관련 참고자료 없음)";
-
-    private static final String SYSTEM_PROMPT_TEMPLATE = """
+    private static final String SYSTEM_PROMPT = """
             너는 배달 서비스의 고객센터 챗봇입니다.
 
-            [도구 사용 규칙]
+            [주문 조회 도구 사용 규칙]
             사용자가 본인의 최근 주문, 배달 상태, 주문 취소 여부 등
             개인화된 동적 정보를 물으면 반드시 getMyRecentOrders 도구를 호출해서
             실제 데이터를 조회한 뒤 그 결과를 바탕으로 답하세요.
@@ -38,34 +44,41 @@ public class ChatAnswerService {
             상태가 배달완료인 주문을 안내할 때는 상태만 전달하고 끝내지 말고,
             "수령하신 음식에 문제는 없으셨나요?"처럼 이상 여부를 먼저 확인하는 질문을 덧붙이세요.
             사용자가 배달완료 주문에 대해 음식이 안 왔다/다른 음식이 왔다/이물질이 있다 등
-            문제를 제기하면, 아래 참고자료에 관련 안내(오배달, 미수령, 이물질 신고 절차 등)가 있으면
-            그 절차를 안내하고, 참고자료에 없으면 임의로 환불이나 보상을 약속하지 말고
+            문제를 제기하면, searchFaq로 관련 안내(오배달, 미수령, 이물질 신고 절차 등)를 찾아
+            그 절차를 안내하고, 찾지 못하면 임의로 환불이나 보상을 약속하지 말고
             고객센터 문의를 안내하세요.
 
-            [참고자료 사용 규칙]
-            아래 참고자료가 있다면 그 범위 안에서만 답하고 지어내지 마세요.
-            참고자료도 없고 도구로도 답할 수 없는 질문이면 모른다고 솔직히 말하세요.
+            [FAQ 검색 도구 사용 규칙]
+            사용자의 질문이 배달 서비스 이용 방법, 정책, 환불/이물질 신고 절차 등
+            회사가 정한 규칙이나 절차에 대한 것이면 반드시 searchFaq 도구를 호출해서
+            참고자료를 검색한 뒤 그 범위 안에서만 답하고 지어내지 마세요.
+            검색 결과가 없거나 질문과 관련이 없으면 모른다고 솔직히 말하세요.
 
             친절하고 간결한 존댓말로 답하세요.
-
-            [참고자료]
-            %s
             """;
 
     private final ChatClient toolCallingChatClient;
 
-    public Flux<String> answerStream(String userQuestion, String faqContext, Long memberId) {
-        String systemPrompt = SYSTEM_PROMPT_TEMPLATE.formatted(
-                faqContext.isEmpty() ? NO_CONTEXT_PLACEHOLDER : faqContext);
-
+    public Flux<String> answer(List<ChatMessageResult> history, String userQuestion, Long memberId,
+                                AtomicReference<FaqSearchOutcome> faqOutcomeHolder) {
         Map<String, Object> toolContext = new HashMap<>();
         toolContext.put(OrderQueryTools.MEMBER_ID_CONTEXT_KEY, memberId);
+        toolContext.put(FaqSearchTools.FAQ_OUTCOME_HOLDER_KEY, faqOutcomeHolder);
 
         return toolCallingChatClient.prompt()
-                .system(systemPrompt)
+                .system(SYSTEM_PROMPT)
+                .messages(toMessages(history))
                 .user(userQuestion)
                 .toolContext(toolContext)
                 .stream()
                 .content();
+    }
+
+    private List<Message> toMessages(List<ChatMessageResult> history) {
+        return history.stream()
+                .<Message>map(m -> "user".equals(m.role())
+                        ? new UserMessage(m.content())
+                        : new AssistantMessage(m.content()))
+                .toList();
     }
 }

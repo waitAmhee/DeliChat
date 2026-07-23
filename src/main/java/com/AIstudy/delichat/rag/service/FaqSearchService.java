@@ -44,19 +44,6 @@ public class FaqSearchService {
         return new FaqContextResult(buildContext(relevant),true);
     }
 
-    public Flux<String> answerStreamWithContext(String userQuestion, String context){
-        if(context.isEmpty()){
-            return Flux.just("죄송해요, 지금 이 질문에는 답변을 드리기 어려워요. 다른 방식으로 여쭤봐 주시겠어요?");
-        }
-
-        Prompt prompt = buildPrompt(userQuestion,context);
-
-        return chatModel.stream(prompt)
-                .filter(response -> response.getResult() != null)
-                .map(response -> response.getResult().getOutput().getText())
-                .filter(text-> text!=null && !text.isEmpty());
-    }
-
     private String buildContext(List<FaqSimilarResult> results){
         StringBuilder sb = new StringBuilder();
         for(int i=0;i<results.size();i++){
