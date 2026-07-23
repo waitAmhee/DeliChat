@@ -15,3 +15,11 @@ spring:
       chat:
         options:
           model: gpt-4.1-nano
+
+app:
+  judge:
+    # Little's Law: 동시성 = 목표 처리율(건/분) x 건당 처리시간(분)
+    # 예) Tier 1 30,000 TPM, 건당 ~1,500 토큰 -> 목표 처리율 30000/1500 = 분당 20건
+    #     건당 처리시간 ~5초(5/60분) -> 20 x (5/60) ≈ 2
+    # OpenAI 요금제 티어나 실측 콜당 시간/토큰이 바뀌면 이 공식으로 재계산할 것.
+    max-concurrent-judges: 2

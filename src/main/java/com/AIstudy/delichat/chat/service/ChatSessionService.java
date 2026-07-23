@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 public class ChatSessionService {
     private final ChatSessionRepository chatSessionRepository;
 
-    public Long createSession() {
-        return chatSessionRepository.createSession();
+    public Long createSession(Long memberId) {
+        return chatSessionRepository.createSession(memberId);
     }
 }
