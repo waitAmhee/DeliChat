@@ -1,6 +1,7 @@
 package com.AIstudy.delichat.rag.service;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -9,6 +10,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class FaqEmbeddingService {
@@ -27,8 +29,15 @@ public class FaqEmbeddingService {
 
         int embedded = 0;
         for (Long id : ids) {
-            if (tryClaimAndEmbed(id)) {
-                embedded++;
+            // 한 행이 계속 실패해도(임베딩 API 오류, 토큰 초과 등) 나머지 행은 계속 처리되어야 한다.
+            // 여기서 잡지 않으면 예외가 루프 밖(FaqNotifyListener의 연결 관리 catch)까지 전파되어
+            // DB 연결 문제로 오인되고, 이후 행들이 영영 임베딩되지 않는다.
+            try {
+                if (tryClaimAndEmbed(id)) {
+                    embedded++;
+                }
+            } catch (Exception e) {
+                log.error("FAQ id={} 임베딩 실패, 다음 행으로 계속 진행합니다.", id, e);
             }
         }
         return embedded;
