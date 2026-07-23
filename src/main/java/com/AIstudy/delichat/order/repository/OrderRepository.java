@@ -13,12 +13,12 @@ import java.util.List;
 public class OrderRepository {
 
     private static final DateTimeFormatter ORDERED_AT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
-
     private final JdbcTemplate jdbcTemplate;
 
+    // 고객 ID에 따른 주문 내역 조회
     public List<OrderStatusResult> findRecentOrdersByMember(Long memberId, int limit){
         String sql = """
-                SELECT id, store_name, menu_summary, total_price, delivery_status, ordered_at
+                SELECT id, order_code, store_name, menu_summary, total_price, delivery_status, ordered_at
                 FROM orders
                 WHERE member_id = ?
                 ORDER BY ordered_at DESC
@@ -27,6 +27,7 @@ public class OrderRepository {
 
         return jdbcTemplate.query(sql, (rs, rowNum) -> new OrderStatusResult(
                 rs.getLong("id"),
+                rs.getString("order_code"),
                 rs.getString("store_name"),
                 rs.getString("menu_summary"),
                 rs.getInt("total_price"),
