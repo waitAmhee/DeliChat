@@ -1,13 +1,13 @@
 package com.AIstudy.delichat.rag.service;
 
 import com.AIstudy.delichat.rag.dto.MultiCriteriaJudgement;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -17,15 +17,25 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 @Service
-@RequiredArgsConstructor
 public class RagEvalJudgeService {
 
     private static final String JUDGE_MODEL="gpt-4o";
 
     private final ChatModel chatModel;
     private final JdbcTemplate jdbcTemplate;
-    private final ObjectMapper objectMapper;
-    private final ExecutorService virtualThreadExecutor = Executors.newVirtualThreadPerTaskExecutor();
+    private final JsonMapper jsonMapper;
+    private final ExecutorService virtualThreadExecutor;
+
+    // 미채점 로그가 한 번에 많이 쌓여도 gpt-4o 호출이 몰리지 않도록, 풀 크기 자체를 제한해서
+    // 동시 실행 개수를 캡핑한다 (세마포어로 acquire/release를 직접 관리하는 대신 풀 크기로 해결).
+    // 값 산정 근거(Little's Law 계산)는 application.yml의 app.judge.max-concurrent-judges 주석 참고.
+    public RagEvalJudgeService(ChatModel chatModel, JdbcTemplate jdbcTemplate, JsonMapper jsonMapper,
+                                @Value("${app.judge.max-concurrent-judges}") int maxConcurrentJudges) {
+        this.chatModel = chatModel;
+        this.jdbcTemplate = jdbcTemplate;
+        this.jsonMapper = jsonMapper;
+        this.virtualThreadExecutor = Executors.newFixedThreadPool(maxConcurrentJudges, Thread.ofVirtual().factory());
+    }
 
     private static final String JUDGE_PROMPT = """
         너는 배달 서비스 CS 챗봇의 답변 품질을 엄격하게 평가하는 심사자다.
@@ -110,7 +120,7 @@ public class RagEvalJudgeService {
                 .trim();
 
         try{
-            return objectMapper.readValue(rawResponse,MultiCriteriaJudgement.class);
+            return jsonMapper.readValue(rawResponse,MultiCriteriaJudgement.class);
         }catch (Exception e){
             throw new RuntimeException("Judge 응답 파싱 실패: " + rawResponse, e);
         }
