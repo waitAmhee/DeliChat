@@ -1,5 +1,6 @@
 package com.AIstudy.delichat.rag.repository;
 
+import com.AIstudy.delichat.rag.dto.FaqQuestionAnswer;
 import com.AIstudy.delichat.rag.dto.FaqSimilarResult;
 import com.AIstudy.delichat.rag.service.EmbeddingService;
 import lombok.RequiredArgsConstructor;
@@ -7,6 +8,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 @RequiredArgsConstructor
@@ -40,5 +42,35 @@ public class FaqRepository {
                 rs.getString("answer"),
                 rs.getDouble("similarity")
         ), literal, topK);
+    }
+
+    // 임베딩이 비어있는 FAQ id 전체 조회 (백필 대상 목록).
+    public List<Long> findIdsMissingEmbedding() {
+        return jdbcTemplate.queryForList(
+                "SELECT id FROM cs_faq WHERE embedding IS NULL", Long.class
+        );
+    }
+
+    // FOR UPDATE SKIP LOCKED로 행을 클레임해서 값을 가져오는 메서드
+    public Optional<FaqQuestionAnswer> claimForEmbedding(Long id) {
+        String sql = """
+                SELECT question, answer
+                FROM cs_faq
+                WHERE id = ? AND embedding IS NULL
+                FOR UPDATE SKIP LOCKED
+                """;
+
+        return jdbcTemplate.query(sql, (rs, rowNum) -> new FaqQuestionAnswer(
+                rs.getString("question"),
+                rs.getString("answer")
+        ), id).stream().findFirst();
+    }
+
+    // 문서 cs_faq 업데이트 메서드
+    public void updateEmbedding(Long id, String vectorLiteral) {
+        jdbcTemplate.update(
+                "UPDATE cs_faq SET embedding = ?::vector WHERE id = ?",
+                vectorLiteral, id
+        );
     }
 }
