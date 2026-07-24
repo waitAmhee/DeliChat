@@ -22,7 +22,6 @@ public class FaqSearchService {
 
     private final FaqRepository faqRepository;
     private final EmbeddingService embeddingService;
-    private final ChatModel chatModel;
 
     /**
      *
@@ -30,13 +29,18 @@ public class FaqSearchService {
      * 근거자료가 없으면 찾지 못함 메시지를 담은 Flux하나만 emit하고 끝냄
      */
     public FaqContextResult buildContextFor(String userQuestion){
+        // 1. 사용자 질문 임베딩화
         float[] queryVector = embeddingService.embed(userQuestion);
+
+        // 2. 사용자 질문과 유사한 3개 문서 select
         List<FaqSimilarResult> results = faqRepository.searchSimilarFaqs(queryVector,TOP_K);
 
+        // 3. 유사도가 0.5 이상인 문서들로만 구성
         List<FaqSimilarResult> relevant = results.stream()
                 .filter(r-> r.similarity()>=SIMILARITY_THRESHOLD)
                 .toList();
 
+        // 4. 없으면 context 전달 X
         if(relevant.isEmpty()){
             return new FaqContextResult("",false);
         }
@@ -54,26 +58,5 @@ public class FaqSearchService {
         }
         return sb.toString();
     }
-
-    private Prompt  buildPrompt(String userQuestion, String context){
-        //TEST -> 프롬프트 테스트 예정
-        String promptText= """
-                너는 배달 서비스의 고객센터 챗봇입니다.
-                아래 참고자료만 근거로 답변하고, 참고자료에 없는 내용은 지어내지 마라.
-                참고자료로 답할 수 없으면 모른다고 솔직히 말해라.
-                친절하고 간결한 존댓말로 답변해라.      
-                
-                각 문장 끝에는 그 문장의 근거가 된 참고 자료 번호를 [1], [2] 형태로 표시해라.
-                여러 참고자료를 함께 사용했다면 [1][2]처럼 모두 표시해라.
-                참고자료 없이 일반 상식으로 답한 문장에는 표시하지 마라.
-                
-                %s
-                사용자 질문: %s
-                """.formatted(context,userQuestion);
-
-        return new Prompt(promptText);
-
-    }
-
 
 }
