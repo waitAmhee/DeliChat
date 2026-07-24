@@ -17,6 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
+
+// AI 답변 생성 엔진
 @Service
 @RequiredArgsConstructor
 public class ChatAnswerService {
@@ -61,10 +63,12 @@ public class ChatAnswerService {
 
     public Flux<String> answer(List<ChatMessageResult> history, String userQuestion, Long memberId,
                                 AtomicReference<FaqSearchOutcome> faqOutcomeHolder) {
+        // 1. tool 호출 시 사용할 서버 측 컨텍스트를 구성
         Map<String, Object> toolContext = new HashMap<>();
         toolContext.put(OrderQueryTools.MEMBER_ID_CONTEXT_KEY, memberId);
         toolContext.put(FaqSearchTools.FAQ_OUTCOME_HOLDER_KEY, faqOutcomeHolder);
 
+        // 2. 시스템 프롬프트, 이전대화, 현재 질문, toolContext를 함께 넘겨 도구 호출이 가능한 스트리밍 답변 생성을 시작한다.
         return toolCallingChatClient.prompt()
                 .system(SYSTEM_PROMPT)
                 .messages(toMessages(history))
@@ -74,6 +78,7 @@ public class ChatAnswerService {
                 .content();
     }
 
+    // 저장된 대화 이력을 Spring AI가 이해하는 Message 타입으로 변환
     private List<Message> toMessages(List<ChatMessageResult> history) {
         return history.stream()
                 .<Message>map(m -> "user".equals(m.role())

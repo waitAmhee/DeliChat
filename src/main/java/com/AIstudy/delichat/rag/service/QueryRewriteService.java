@@ -15,6 +15,7 @@ public class QueryRewriteService {
 
     private final ChatModel chatModel;
 
+    // 대화 이력을 참고해 후속 질문을 RAG 검색에 사용할 수 있는 독립 질문으로 재작성
     public String rewrite(List<ChatMessageResult> history, String newQuestion){
 
         if(history.isEmpty()){
@@ -40,6 +41,7 @@ public class QueryRewriteService {
                    재작성된 질문:
                 """.formatted(historyText,newQuestion);
 
+        // 동기 호출 -> 보통 재작성 결과를 이용해서 FAQ 검색
         return chatModel.call(new Prompt(promptText))
                 .getResult().getOutput().getText()
                 .trim();

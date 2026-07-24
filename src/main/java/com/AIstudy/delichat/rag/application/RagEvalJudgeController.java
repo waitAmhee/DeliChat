@@ -14,6 +14,7 @@ public class RagEvalJudgeController {
 
     private final RagEvalJudgeService ragEvalJudgeService;
 
+    // TODO 미채점 로그를 채점하는 수동 controller로 구현
     @PostMapping("/admin/eval/judge")
     public ResponseEntity<Map<String, Integer>> judgeUnjudgedLogs() {
         int count = ragEvalJudgeService.judgeUnjudgedLogs();
