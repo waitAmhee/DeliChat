@@ -3,9 +3,10 @@ package com.AIstudy.delichat.chat.service;
 import com.AIstudy.delichat.chat.dto.ChatMessageResult;
 import com.AIstudy.delichat.chat.repository.ChatMessageRepository;
 import com.AIstudy.delichat.chat.repository.ChatSessionRepository;
-import com.AIstudy.delichat.chat.repository.RagEvalLogRepository;
 import com.AIstudy.delichat.rag.dto.FaqSearchOutcome;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 // 채팅 요청 전체 흐름을 조율하는 곳
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatOrchestratorService {
@@ -20,7 +22,7 @@ public class ChatOrchestratorService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatAnswerService chatAnswerService;
-    private final RagEvalLogRepository ragEvalLogRepository;
+    private final RagEvalPersistenceService ragEvalPersistenceService;
 
     public Flux<String> handle(Long sessionId, String userQuestion){
 
@@ -39,17 +41,25 @@ public class ChatOrchestratorService {
         StringBuilder fullAnswer = new StringBuilder();
         return chatAnswerService.answer(history,userQuestion,memberId,faqOutcomeHolder)
                 .doOnNext(fullAnswer::append)
+                .doOnError(this::logIfRateLimited)
                 .doOnComplete(()->{
                     String answer = fullAnswer.toString();
                     // 5. 스트림이 끝나면 완성된 assistant 답변을 대화 기록에 저장
                     chatMessageRepository.save(sessionId,"assistant",answer);
 
-                    // 6. FAQ 검색 도구가 실제 참고 자료를 찾은 경우, 나중에 LLM-as-a-judge로 평가
+                    // 6. rag_eval_log 저장(found일 때만) + outbox 이벤트 발행(항상)을 한 트랜잭션으로 처리
                     FaqSearchOutcome faqOutcome = faqOutcomeHolder.get();
-                    if(faqOutcome != null && faqOutcome.result().found()){
-                        ragEvalLogRepository.save(sessionId,faqOutcome.query(),faqOutcome.result().context(),answer);
-                    }
-
+                    ragEvalPersistenceService.recordEvalOutcome(sessionId, faqOutcome, answer);
                 });
+    }
+
+    // 429 등 재시도 가능한 OpenAI 오류(TransientAiException)만 별도 태그로 눈에 띄게 로그. 원
+    private void logIfRateLimited(Throwable e){
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof TransientAiException) {
+                log.warn("[RATE_LIMIT 발견] stage-1 답변 생성 중 OpenAI 호출이 재시도 후에도 실패했습니다: {}", cause.getMessage());
+                return;
+            }
+        }
     }
 }
