@@ -16,10 +16,39 @@ spring:
         options:
           model: gpt-4.1-nano
 
+  kafka:
+    # 로컬 3-브로커 복제 테스트 시 KAFKA_BOOTSTRAP_SERVERS=localhost:9092,localhost:9094,localhost:9096로 오버라이드
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all # 프로듀서가 메시지를 브로커에 보냈을 때
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        # outbox relay가 여러 레코드를 논블로킹으로 send()한 뒤 한 번에 기다리므로, 이 값들이 실제로 배치를 묶는 데 쓰인다.
+        linger.ms: 20 # batch.size가 안 찼어도 20ms까지 모인 걸 바로 전송
+        batch.size: 32768 # 메시지들을 모아서 쌓이면 바로 전송
+    consumer:
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
+        spring.json.trusted.packages: com.AIstudy.delichat.rag.dto
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
 app:
   judge:
-    # Little's Law: 동시성 = 목표 처리율(건/분) x 건당 처리시간(분)
-    # 예) Tier 1 30,000 TPM, 건당 ~1,500 토큰 -> 목표 처리율 30000/1500 = 분당 20건
-    #     건당 처리시간 ~5초(5/60분) -> 20 x (5/60) ≈ 2
-    # OpenAI 요금제 티어나 실측 콜당 시간/토큰이 바뀌면 이 공식으로 재계산할 것.
     max-concurrent-judges: 2
+    sample-rate: 1.0
+  kafka:
+    # 로컬 3-브로커 복제 테스트 시 KAFKA_REPLICATION_FACTOR=3, KAFKA_MIN_INSYNC_REPLICAS=2로 오버라이드.
+    replication-factor: ${KAFKA_REPLICATION_FACTOR:1}
+    min-insync-replicas: ${KAFKA_MIN_INSYNC_REPLICAS:1}
+    consumer-concurrency: ${KAFKA_CONSUMER_CONCURRENCY:1}
+    topic:
+      rag-eval-requested: RAG_EVAL_REQUESTED
+      rag-eval-judged: RAG_EVAL_JUDGED
