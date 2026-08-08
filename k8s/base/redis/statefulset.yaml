@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: delichat
+  labels:
+    app: redis
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  podManagementPolicy: OrderedReady #순서대로 뜨기 (replicaof )
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: redis
+                topologyKey: kubernetes.io/hostname
+              weight: 100
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              if [ "$HOSTNAME" = "redis-0" ]; then
+                exec redis-server --appendonly yes --appendfsync everysec
+              else
+                exec redis-server --appendonly yes --appendfsync everysec \
+                  --replicaaof redis-0.redis-headless.delichat.svc.cluster.local 6379
+              fi
+          ports:
+            - containerPort: 6379
+              name: redis
+          volumeMounts:
+            - mountPath: /data
+              name: redis-data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+        - name: sentinel
+          image: redis:7-alpine
+          command:
+              - sh
+              - -c
+              - | 
+                cat > /tmp/sentinel.conf <<EOF
+                sentinel monitor mymaster redis-0.redis-headless.delichat.svc.cluster.local 6379 2
+                sentinel down-after-milliseconds mymaster 500
+                sentinel failvoer-timeout mymaster 10000
+                sentinel parallel-syncs mymaster 1
+                EOF
+                exec redis-sentinel /tmp/sentinel.conf
+          ports:
+            - containerPort: 26379
+              name: sentinel
+  volumeClaimTemplates:
+        - metadata:
+            name: redis-data
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 1Gi

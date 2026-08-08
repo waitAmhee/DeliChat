@@ -1,0 +1,100 @@
+
+# StatefulSet 파드 하나의 스펙으로 3개 브로커를 표현해야 해서 KAFKA_NODE_ID와
+# KAFKA_ADVERTISED_LISTENERS만 파드마다 달라야 한다. 이 값들은 정적 env로 줄 수 없으므로
+# command 래퍼 스크립트가 $HOSTNAME(StatefulSet가 보장하는 "kafka-<ordinal>" 형식)에서
+# ordinal을 뽑아 계산한 뒤 원래 엔트리포인트(/etc/kafka/docker/run)를 그대로 실행한다.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: delichat
+  labels:
+    app: kafka
+spec:
+  serviceName: kafka-headless
+  replicas: 3
+  # 컨트롤러 쿼럼이 서로를 알아야 부팅되므로, 하나씩 순서대로 뜨는 기본 정책 대신 동시에 기동
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: kafka
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: kafka
+          image: apache/kafka:3.7.0
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              ORDINAL=${HOSTNAME##*-}
+              export KAFKA_NODE_ID=$((ORDINAL + 1))
+              export KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://${HOSTNAME}.kafka-headless.delichat.svc.cluster.local:9092"
+              exec /etc/kafka/docker/run
+          ports:
+            - containerPort: 9092
+              name: plaintext
+            - containerPort: 9093
+              name: controller
+          env:
+            - name: CLUSTER_ID
+              value: "42xFSbuU88oMHOocvjthSw"
+            - name: KAFKA_PROCESS_ROLES
+              value: "broker,controller"
+            - name: KAFKA_LISTENERS
+              value: "PLAINTEXT://:9092,CONTROLLER://:9093"
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: "CONTROLLER"
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: "1@kafka-0.kafka-headless.delichat.svc.cluster.local:9093,2@kafka-1.kafka-headless.delichat.svc.cluster.local:9093,3@kafka-2.kafka-headless.delichat.svc.cluster.local:9093"
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "3"
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false"
+            - name: KAFKA_LOG_DIRS
+              value: "/var/lib/kafka/data"
+          readinessProbe:
+            tcpSocket: # 카프카는 자체 바이너리 프로토콜을 쓰는 시스템. -> 이 포트에 tcp연결이 되는지만 확인
+              port: 9092
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 40
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1536Mi
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /var/lib/kafka/data
+  volumeClaimTemplates: # 각 파드마다 각자의 PVC를 자동으로 만들어주는 템플릿
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

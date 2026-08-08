@@ -1,0 +1,15 @@
+.git
+.gradle
+build/
+out/
+bin/
+.idea
+.vscode
+.claude
+*.iml
+.env
+model.sql
+plan/
+k8s/
+docker-compose*.yml
+HELP.md

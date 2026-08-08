@@ -1,0 +1,16 @@
+# kind로 컨트롤플레인 1 + 워커 3개짜리 멀티노드 클러스터를 만든다.
+# 워커를 3개 이상 두는 이유: Kafka StatefulSet(3 replica, podAntiAffinity)이
+# 실제로 서로 다른 노드에 분산되는지 로컬에서 검증하기 위함 (minikube 단일 VM으로는 불가능).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: delichat
+nodes:
+  - role: control-plane
+    # delichat-app NodePort(overlays/kind에서 30080으로 고정)을 호스트 8080으로 노출
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 8080
+        protocol: TCP
+  - role: worker
+  - role: worker
+  - role: worker

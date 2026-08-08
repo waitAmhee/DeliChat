@@ -1,0 +1,24 @@
+# 기본적으로 쿠버네티스 Service는 readiness prob(Ready 상태)를 통과한 파드만 DNS/엔드포인트 목록에 올려줌
+# publishNotReadyAddresses: 컨트롤러 쿼럼(합의 그룹) 부팅 중에는 아직 readiness가 안 됐어도
+# 컨트롤러 쿼럼 -> 카프카가 자체적으로 메타데이터 합의를 처리하는 방식(누가 리더인지, 파티션 메타데이터가 어떻게 바뀌어는지 같은 클러스터 운영 정보를 주고받는 내부 통신 채널)
+# 브로커끼리 서로의 DNS를 찾아야 하므로 필수.
+# clusterIP : None -> 헤드리스 서버. kafka처럼 브로커마다 갖고 있는 데이터가 다른 경우에는 아무거나 걸리면 되는 로드밸런싱이 아니라 정확히 이 브로커로 연결을 해야해서 대표 IP가 아니라 DNS를 조회해서 각 파드의 개별 IP를 그대로 접근
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  namespace: delichat
+  labels:
+    app: kafka
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: kafka
+  ports:
+    - name: plaintext # 클라이언트/프로듀서/컨슈머가 kafka 접근 통로
+      port: 9092
+      targetPort: 9092
+    - name: controller # 브로커 내부 합의용 통로
+      port: 9093
+      targetPort: 9093
