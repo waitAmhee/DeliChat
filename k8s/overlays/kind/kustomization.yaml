@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: patch-postgres-resources.yaml
+  - path: patch-kafka-resources.yaml
+  - path: patch-redis-resources.yaml
+  - path: patch-app-resources.yaml
+  # kind 기본 내장 StorageClass(rancher.io/local-path)의 이름이 "standard"
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: standard
+  - target:
+      kind: StatefulSet
+      name: kafka
+    patch: |-
+      - op: add
+        path: /spec/volumeClaimTemplates/0/spec/storageClassName
+        value: standard
+  # kind는 LoadBalancer 미지원 -> NodePort + kind-config.yaml의 extraPortMappings(30080->8080)로 접근
+  - target:
+      kind: Service
+      name: delichat-app
+    patch: |-
+      - op: add
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30080
