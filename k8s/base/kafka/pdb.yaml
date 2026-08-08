@@ -1,0 +1,12 @@
+# 자발적 중단 상황(not 비자발적 중단 = 예측 불가능한 장애)에서 최소 몇 개의 파드가 살아있어야 하는지를 강제하는 규칙
+# PodDisruptionBudget -> app:kafka 라벨이 붙은 파드들 중에서 최소 2개는 살아있어야 한다.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kafka-pdb
+  namespace: delichat
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: kafka

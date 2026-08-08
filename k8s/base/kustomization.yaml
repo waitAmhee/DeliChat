@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - redis/statefulset.yaml
+  - redis/service.yaml
+  - kafka/statefulset.yaml
+  - kafka/service.yaml
+  - kafka/pdb.yaml
+  - app/deployment.yaml
+  - app/service.yaml
