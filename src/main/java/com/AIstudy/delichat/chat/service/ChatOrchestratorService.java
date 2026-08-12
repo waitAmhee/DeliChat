@@ -3,6 +3,7 @@ package com.AIstudy.delichat.chat.service;
 import com.AIstudy.delichat.chat.dto.ChatMessageResult;
 import com.AIstudy.delichat.chat.repository.ChatMessageRepository;
 import com.AIstudy.delichat.chat.repository.ChatSessionRepository;
+import com.AIstudy.delichat.image.ChatVisionService;
 import com.AIstudy.delichat.rag.dto.FaqSearchOutcome;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,8 +24,15 @@ public class ChatOrchestratorService {
     private final ChatSessionRepository chatSessionRepository;
     private final ChatAnswerService chatAnswerService;
     private final RagEvalPersistenceService ragEvalPersistenceService;
+    private final ChatVisionService chatVisionService;
 
-    public Flux<String> handle(Long sessionId, String userQuestion){
+    public Flux<String> handle(Long sessionId, String userQuestion,List<String> imageUrls){
+
+        // 이미지를 캡션으로 만들기
+        if(imageUrls != null && !imageUrls.isEmpty()){
+            String caption = chatVisionService.generateCaption(imageUrls);
+            userQuestion = userQuestion + "\n[첨부 이미지 설명] "+caption;
+        }
 
         // 1. 해당 세션의 최근 메시지 조회
         List<ChatMessageResult> history = chatMessageRepository.findRecentMessage(sessionId);
