@@ -6,12 +6,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -33,14 +33,14 @@ public class ChatController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("sessionId", sessionId));
     }
 
-    @GetMapping(value="/chat/stream",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamAnswer(@RequestParam Long sessionId,@RequestParam String question){
+    @PostMapping(value="/chat/stream",produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamAnswer(@RequestParam Long sessionId, @RequestParam String question, @RequestParam(required = false) List<String> imageUrls){
         SseEmitter emitter = new SseEmitter(60_000L);
 
         //DOC 버츄얼 스레드로 변경 이유 정리
         virtualThreadExecutor.submit(()->{
             try {
-                chatOrchestratorService.handle(sessionId,question)
+                chatOrchestratorService.handle(sessionId,question,imageUrls)
                         .subscribe(
                                 token->{
                                     try{
