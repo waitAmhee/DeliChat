@@ -75,6 +75,25 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka1:9093,2@kafka2:9093,3@kafka3:9093
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+  minio:
+    image: minio/minio:latest
+    container_name: delichat-minio
+    ports:
+      - "9000:9000" # API 포트
+      - "9001:9001" # 콘솔 포트
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD","curl","-f","http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 
 volumes:
   postgres_data:
+  minio-data:
